@@ -1,0 +1,105 @@
+version: "2.2"
+services:
+  spark-iceberg:
+    image: tabulario/spark-iceberg
+    depends_on:
+      - postgres
+    container_name: spark-iceberg
+    environment:
+      - SPARK_HOME=/opt/spark
+      - PYSPARK_PYTON=/usr/bin/python3.9
+      - PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/spark/bin:/opt/spark/sbin
+      - AWS_ACCESS_KEY_ID=admin
+      - AWS_SECRET_ACCESS_KEY=password
+      - AWS_REGION=us-east-1
+    volumes:
+      - ./notebooks:/home/iceberg/notebooks/notebooks
+      - ./aws-core-2.17.131.jar:/opt/spark/jars/aws-core-2.17.131.jar
+    ports:
+      - 8888:8888
+      - 8080:8080
+      - 18080:18080
+    entrypoint: /bin/sh
+    command: >
+      -c "
+      echo \"
+      spark.sql.catalog.demo.io-impl         org.apache.iceberg.aws.s3.S3FileIO \n
+      spark.sql.catalog.demo.warehouse       s3a://warehouse \n
+      spark.sql.catalog.demo.s3.endpoint     http://minio:9000 \n
+      \" >> /opt/spark/conf/spark-defaults.conf && spark-sql -e 'CREATE DATABASE transit' && spark-sql -e 'CREATE TABLE transit.simulations (planet_id string, flux float, event_time timestamp)' && ./entrypoint.sh notebook
+      "
+  postgres:
+    image: postgres:13.4-bullseye
+    container_name: postgres
+    command: -p 5432
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=demo_catalog
+  trino:
+    image: trinodb/trino
+    container_name: trino
+    ports:
+      - "8181:8181"
+    volumes:
+      - ./trino/etc:/etc/trino
+      - ./trino/trino-pr-11772:/usr/lib/trino
+    command: ["/usr/lib/trino/bin/launcher", "run", "--etc-dir", "/etc/trino"]
+  superset:
+    image: apache/superset
+    container_name: superset
+    entrypoint: ./superset-entrypoint.sh
+    volumes:
+      - ./superset-entrypoint.sh:/app/superset-entrypoint.sh
+    ports:
+      - "8088:8088"
+  minio:
+    image: minio/minio
+    container_name: minio
+    environment:
+      - MINIO_ROOT_USER=admin
+      - MINIO_ROOT_PASSWORD=password
+    ports:
+      - 9001:9001
+      - 9000:9000
+    command: ["server", "/data", "--console-address", ":9001"]
+  mc:
+    depends_on:
+      - minio
+    image: minio/mc
+    container_name: mc
+    environment:
+      - AWS_ACCESS_KEY_ID=demo
+      - AWS_SECRET_ACCESS_KEY=password
+      - AWS_REGION=us-east-1
+    entrypoint: >
+      /bin/sh -c "
+      until (/usr/bin/mc config host add minio http://minio:9000 admin password) do echo '...waiting...' && sleep 1; done;
+      /usr/bin/mc rm -r --force minio/warehouse;
+      /usr/bin/mc mb minio/warehouse;
+      /usr/bin/mc policy set public minio/warehouse;
+      exit 0;
+      "
+  flink-jobmanager:
+    image: flink:latest
+    ports:
+      - "8081:8081"
+    command: jobmanager
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+
+  flink-taskmanager:
+    image: flink:latest
+    depends_on:
+      - flink-jobmanager
+    command: taskmanager
+    scale: 1
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 2

@@ -1,0 +1,71 @@
+plugins {
+    id 'java'
+    id 'application'
+    // shadow plugin to produce fat JARs
+    id 'com.github.johnrengelman.shadow' version '7.1.2'
+}
+
+group 'org.examples.flinkdemo'
+version '1.0-SNAPSHOT'
+mainClassName = 'org.examples.flinkdemo.SimulationDataSink'
+description = """Demo of streaming from flink to an Iceberg table"""
+ext {
+    javaVersion = '11'
+    flinkVersion = '1.15-SNAPSHOT'
+    scalaBinaryVersion = '_2.12'
+    slf4jVersion = '1.7.32'
+    log4jVersion = '2.17.1'
+}
+sourceCompatibility = javaVersion
+targetCompatibility = javaVersion
+tasks.withType(JavaCompile) {
+    options.encoding = 'UTF-8'
+}
+applicationDefaultJvmArgs = ["-Dlog4j.configurationFile=log4j2.properties"]
+
+repositories {
+    mavenCentral()
+    maven {
+        url "https://repository.apache.org/content/repositories/snapshots"
+        mavenContent {
+            snapshotsOnly()
+        }
+    }
+}
+
+configurations {
+    flinkShadowJar // dependencies which go into the shadowJar
+    // always exclude these (also from transitive dependencies) since they are provided by Flink
+    flinkShadowJar.exclude group: 'org.apache.flink', module: 'force-shading'
+    flinkShadowJar.exclude group: 'com.google.code.findbugs', module: 'jsr305'
+    flinkShadowJar.exclude group: 'org.slf4j'
+    flinkShadowJar.exclude group: 'org.apache.logging.log4j'
+}
+
+dependencies {
+    compileOnly group: 'org.apache.flink', name: 'flink-core', version: '1.15.1'
+    compileOnly group: 'org.apache.flink', name: 'flink-streaming-java', version: '1.15.1'
+    compileOnly group: 'org.apache.flink', name: 'flink-table-api-java-bridge', version: '1.15.1'
+
+    implementation group: 'org.apache.hadoop', name: 'hadoop-common', version: '3.3.3'
+    implementation group: 'org.apache.hadoop', name: 'hadoop-aws', version: '3.3.3'
+    implementation group: 'com.amazonaws', name: 'aws-java-sdk-bundle', version: '1.11.1026'
+    implementation group: 'org.apache.iceberg', name: 'iceberg-core', version: '0.14.0'
+    implementation group: 'org.apache.iceberg', name: 'iceberg-flink-1.15', version: '0.14.0'
+    implementation group: 'org.postgresql', name: 'postgresql', version: '42.2.26'
+    implementation group: 'com.github.javafaker', name: 'javafaker', version: '1.0.2'
+
+    flinkShadowJar group: 'org.apache.hadoop', name: 'hadoop-common', version: '3.3.3'
+    flinkShadowJar group: 'org.apache.hadoop', name: 'hadoop-aws', version: '3.3.3'
+    flinkShadowJar group: 'com.amazonaws', name: 'aws-java-sdk-bundle', version: '1.11.1026'
+    flinkShadowJar group: 'org.apache.iceberg', name: 'iceberg-core', version: '0.14.0'
+    flinkShadowJar group: 'org.apache.iceberg', name: 'iceberg-flink-1.15', version: '0.14.0'
+    flinkShadowJar group: 'org.postgresql', name: 'postgresql', version: '42.2.26'
+    flinkShadowJar group: 'com.github.javafaker', name: 'javafaker', version: '1.0.2'
+}
+
+run.classpath = sourceSets.main.runtimeClasspath
+
+shadowJar {
+    zip64 true
+}
